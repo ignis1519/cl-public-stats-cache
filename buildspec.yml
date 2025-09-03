@@ -1,0 +1,34 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      # You can specify runtime versions here if needed
+    commands:
+      # Install a specific version of Terraform
+      - export TF_VERSION="1.5.7"
+      - wget "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
+      - unzip "terraform_${TF_VERSION}_linux_amd64.zip"
+      - mv terraform /usr/local/bin/
+      - terraform --version
+
+  pre_build:
+    commands:
+      # Navigate to the directory containing the Lambda's Terraform code
+      - cd tf-lambda
+      - echo "Initializing Terraform for Lambda..."
+      # The backend configuration should be defined in your .tf files in this directory
+      - terraform init
+
+  build:
+    commands:
+      # Generate a plan for verification and logging
+      - echo "Running Terraform Plan..."
+      - terraform plan -out=tfplan
+
+  post_build:
+    commands:
+      # Apply the plan to deploy the infrastructure
+      - echo "Running Terraform Apply..."
+      - terraform apply -auto-approve tfplan
+```
