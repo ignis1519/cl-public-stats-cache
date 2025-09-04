@@ -1,4 +1,4 @@
-VENV_DIR=venv
+VENV_DIR=.venv
 REQ_FILE=requirements.txt
 PYTHON=python3
 

@@ -3,19 +3,34 @@ import requests
 import os
 import json
 import logging
+import datetime
+from boto3.dynamodb.conditions import Key
+from dateutil.relativedelta import relativedelta
 
 # --- Setup Logging ---
 # Best practice to set up logging for better debugging in CloudWatch
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def convertDate(date_string):
+    """
+    Convert a date string from 'DD-MM-YYYY' to 'YYYY-MM-DD'.
+    """
+    try:
+        date_obj = datetime.strptime(date_string, '%d-%m-%Y')
+        return date_obj.strftime('%Y-%m-%d')
+    except ValueError as e:
+        logger.error(f"Date conversion failed: {e}")
+        return None
+
 # --- Configuration from Environment Variables ---
 # Make your function configurable without changing code
 SSM_USER_PARAM = os.environ.get('SSM_USER_PARAM', '/bcch/username')
 SSM_PASS_PARAM = os.environ.get('SSM_PASS_PARAM', '/bcch/password')
-DYNAMO_TABLE_NAME = os.environ.get('DYNAMO_TABLE_NAME', 'unemployment-storage')
+DYNAMO_TABLE_NAME = os.environ.get('DYNAMO_TABLE_NAME', 'public-stats')
 API_BASE_URL = "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx"
 TSR_UNEMPLOYMENT = "F049.DES.TAS.INE9.10.M"
+STATISTIC_UNEMPLOYMENT = "UNEMPLOYMENT_STAT"
 
 # --- AWS Clients & Secret Initialization (outside the handler) ---
 # This code runs only during a "cold start", making subsequent invocations faster.
@@ -57,10 +72,20 @@ def lambda_handler(event, context):
 
     # --- 1. Extract query parameters from the Lambda event ---
     logger.info(f"Received event: {event}")
-    # Use .get() to avoid errors if a key is missing
-    timeseries = event.get('timeseries')
-    firstdate = event.get('firstdate') # Optional
-    lastdate = event.get('lastdate')   # Optional
+
+    last_item = dynamo_table.query(
+        KeyConditionExpression=Key('statistic').eq(STATISTIC_UNEMPLOYMENT),
+        ScanIndexForward=False,
+        Limit=1
+    )
+
+    last_retrieved_date = None
+
+    if last_item and 'Items' in last_item:
+        last_retrieved_date = last_item['Items'][0].get('date')
+        logger.info(f"Last retrieved date: {last_retrieved_date}")
+    else:
+        logger.warning("No last item found.")
 
     # --- 2. Build the request URL ---
     # Construct the query parameter string dynamically
@@ -70,10 +95,9 @@ def lambda_handler(event, context):
         'timeseries': TSR_UNEMPLOYMENT,
         'function': 'GetSeries'
     }
-    if firstdate:
-        params['firstdate'] = firstdate
-    if lastdate:
-        params['lastdate'] = lastdate
+
+    if last_retrieved_date:
+        params['firstdate'] = (datetime.strptime(last_retrieved_date, '%Y-%m-%d') + relativedelta(days=1)).strftime('%Y-%m-%d')
 
     # --- 3. Make the HTTP request to the external API ---
     try:
@@ -93,19 +117,17 @@ def lambda_handler(event, context):
 
     # --- 4. Store the result in DynamoDB ---
     try:
-        # Your table's primary key is 'id'. We'll use the timeseries identifier for it.
-        # This will overwrite any existing item with the same timeseries ID.
-        item_to_store = {
-            'id': timeseries,
-            'data': api_data # Store the entire JSON response
-            # You could add other attributes like a timestamp:
-            # 'last_updated_utc': datetime.utcnow().isoformat()
-        }
-        
-        logger.info(f"Putting item into DynamoDB table: {DYNAMO_TABLE_NAME}")
-        dynamo_table.put_item(Item=item_to_store)
-        
-        logger.info(f"Successfully stored item for id: {timeseries}")
+        for each in api_data.get("Series").get("Obs"):
+            eachDate = convertDate(each.get("indexDateString"))
+            metric = each.get("value")
+            item = {
+                'statistic': STATISTIC_UNEMPLOYMENT,
+                'date': eachDate,
+                'metric': metric
+            }
+            logger.info(f"Putting item into DynamoDB table: {DYNAMO_TABLE_NAME}")
+            dynamo_table.put_item(Item=item)
+            logger.info(f"Successfully stored item for id: {id}")
 
     except Exception as e:
         logger.error(f"DynamoDB Put Failed: {e}")
@@ -118,7 +140,7 @@ def lambda_handler(event, context):
     return {
         'statusCode': 200,
         'body': json.dumps({
-            'message': f"Successfully fetched and stored data for timeseries: {timeseries}",
+            'message': f"Successfully fetched and stored data for timeseries: {STATISTIC_UNEMPLOYMENT}",
             'retrieved_data': api_data
         })
     }

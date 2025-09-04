@@ -52,7 +52,7 @@ resource "aws_iam_role_policy" "lambda-refresh-cache-policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = aws_dynamodb_table.unemployment_storage_table.arn
+        Resource = aws_dynamodb_table.public_stats_table.arn
       },
       # 3. For SSM Parameter Store
       {

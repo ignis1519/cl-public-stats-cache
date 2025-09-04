@@ -136,8 +136,8 @@ resource "aws_iam_role_policy_attachment" "codepipeline_policy_attach" {
 # AWS CodeBuild Project (Refactored for CodePipeline)
 # -----------------------------------------------------------------------------
 resource "aws_codebuild_project" "cl_unemployment_build" {
-  name          = "cl-unemployment-stats-cache-deploy"
-  description   = "Builds and deploys the Lambda for cl-unemployment-stats. Triggered by CodePipeline."
+  name          = "cl-public-stats-cache-deploy"
+  description   = "Builds and deploys the Lambda for cl-public-stats. Triggered by CodePipeline."
   service_role  = aws_iam_role.codebuild_role.arn
 
   artifacts {
@@ -182,7 +182,7 @@ resource "aws_codepipeline" "cl_unemployment_pipeline" {
 
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github_connection.arn
-        FullRepositoryId = "ignis1519/cl-unemployment-stats-cache"
+        FullRepositoryId = "ignis1519/cl-public-stats-cache"
         BranchName       = "main"
       }
     }
